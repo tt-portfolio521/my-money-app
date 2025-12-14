@@ -1,25 +1,27 @@
 "use client";
 
 import { useState, useEffect } from "react";
+// ★追加：グラフを描くための部品をインポート
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
 
-// 取引データの設計図（カテゴリーを追加）
 interface Transaction {
   id: number;
-  type: string;     // "入金" or "出金"
-  category: string; // ★追加：食費、交通費など
+  type: string;
+  category: string;
   amount: number;
   date: string;
 }
 
-// ★追加：カテゴリーのリスト
 const EXPENSE_CATEGORIES = ["食費", "日用品", "交通費", "交際費", "趣味", "家賃", "その他"];
 const INCOME_CATEGORIES = ["給料", "副業", "お小遣い", "投資配当", "その他"];
+
+// ★追加：グラフの色（綺麗に見えるようにパステルカラーを用意）
+const COLORS = ["#FF8042", "#00C49F", "#FFBB28", "#0088FE", "#FF6666", "#8884d8", "#82ca9d"];
 
 export default function Home() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budget, setBudget] = useState(0);
 
-  // データの読み込み
   useEffect(() => {
     const savedData = localStorage.getItem("transactions");
     if (savedData) setTransactions(JSON.parse(savedData));
@@ -27,18 +29,15 @@ export default function Home() {
     if (savedBudget) setBudget(parseInt(savedBudget));
   }, []);
 
-  // データの保存
   useEffect(() => {
     localStorage.setItem("transactions", JSON.stringify(transactions));
     localStorage.setItem("budget", budget.toString());
   }, [transactions, budget]);
 
-  // ★変更：入力フォームの状態管理
-  const [inputType, setInputType] = useState("出金"); // 今どっちを選んでいるか
+  const [inputType, setInputType] = useState("出金");
   const [amount, setAmount] = useState(0);
-  const [selectedCategory, setSelectedCategory] = useState("食費"); // 選ばれたカテゴリー
+  const [selectedCategory, setSelectedCategory] = useState("食費");
 
-  // 入金/出金を切り替えたら、カテゴリーの初期値をリセットする処理
   useEffect(() => {
     if (inputType === "出金") {
       setSelectedCategory(EXPENSE_CATEGORIES[0]);
@@ -47,28 +46,23 @@ export default function Home() {
     }
   }, [inputType]);
 
-  // 追加ボタンを押したときの処理
   const handleAddTransaction = () => {
     if (amount === 0) return;
-
     const newTransaction: Transaction = {
       id: Date.now(),
       type: inputType,
-      category: selectedCategory, // ★追加
+      category: selectedCategory,
       amount: amount,
       date: new Date().toLocaleDateString(),
     };
-
     setTransactions([...transactions, newTransaction]);
     setAmount(0);
   };
 
   const handleDelete = (id: number) => {
-    const newTransactions = transactions.filter((t) => t.id !== id);
-    setTransactions(newTransactions);
+    setTransactions(transactions.filter((t) => t.id !== id));
   };
 
-  // 計算ロジック
   const totalExpense = transactions
     .filter((t) => t.type === "出金")
     .reduce((sum, t) => sum + t.amount, 0);
@@ -79,13 +73,22 @@ export default function Home() {
 
   const remaining = budget - totalExpense;
 
+  // ★追加：グラフ用のデータを計算するロジック
+  // 「食費はいくら？」「交通費はいくら？」を集計してリストにする
+  const graphData = EXPENSE_CATEGORIES.map((category) => {
+    const value = transactions
+      .filter((t) => t.type === "出金" && t.category === category)
+      .reduce((sum, t) => sum + t.amount, 0);
+    return { name: category, value: value };
+  }).filter((d) => d.value > 0); // 0円のカテゴリーはグラフに出さない
+
   return (
     <main className="flex min-h-screen flex-col items-center p-8 bg-gray-50 text-gray-800">
       <h1 className="text-3xl font-bold mb-8 text-blue-600">収支管理アプリ</h1>
 
       <div className="w-full max-w-md space-y-6">
         
-        {/* 予算設定エリア */}
+        {/* 予算エリア */}
         <div className="bg-white p-6 rounded-xl shadow-md border-l-4 border-purple-500">
           <label className="block text-sm font-bold mb-2 text-gray-600">今月の予算目標</label>
           <input
@@ -102,15 +105,42 @@ export default function Home() {
           </div>
         </div>
 
+        {/* ★追加：円グラフ表示エリア */}
+        {totalExpense > 0 && (
+          <div className="bg-white p-6 rounded-xl shadow-md flex flex-col items-center">
+            <h2 className="font-bold mb-4 text-gray-700">支出の割合</h2>
+            <div className="w-full h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={graphData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    label
+                  >
+                    {graphData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value: number) => `¥${value.toLocaleString()}`} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
         {/* 貯金総額 */}
         <div className="bg-white p-6 rounded-xl shadow-md text-center">
           <p className="text-sm text-gray-500 mb-1">現在の貯金総額</p>
           <p className="text-4xl font-bold">¥{currentBalance.toLocaleString()}</p>
         </div>
 
-        {/* ★変更：入力エリア */}
+        {/* 入力エリア */}
         <div className="bg-white p-6 rounded-xl shadow-md">
-          {/* 1. 入金・出金の切り替えタブ */}
           <div className="flex gap-2 mb-4">
             <button
               onClick={() => setInputType("出金")}
@@ -130,7 +160,6 @@ export default function Home() {
             </button>
           </div>
 
-          {/* 2. カテゴリー選択 */}
           <div className="mb-4">
             <label className="block text-xs font-bold text-gray-500 mb-1">カテゴリー</label>
             <select
@@ -138,7 +167,6 @@ export default function Home() {
               onChange={(e) => setSelectedCategory(e.target.value)}
               className="w-full p-3 border rounded-lg bg-gray-50"
             >
-              {/* 選んでいるタイプに合わせて選択肢を変える */}
               {inputType === "出金" 
                 ? EXPENSE_CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)
                 : INCOME_CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)
@@ -146,7 +174,6 @@ export default function Home() {
             </select>
           </div>
 
-          {/* 3. 金額入力 */}
           <div className="mb-4">
             <label className="block text-xs font-bold text-gray-500 mb-1">金額</label>
             <input
@@ -158,7 +185,6 @@ export default function Home() {
             />
           </div>
 
-          {/* 4. 登録ボタン */}
           <button
             onClick={handleAddTransaction}
             className={`w-full py-3 rounded-lg font-bold text-white transition ${
@@ -183,7 +209,6 @@ export default function Home() {
                       <span className={`text-sm font-bold ${t.type === "入金" ? "text-blue-500" : "text-red-500"}`}>
                         {t.type}
                       </span>
-                      {/* ★追加：カテゴリー表示 */}
                       <span className="text-xs bg-gray-200 px-2 py-1 rounded text-gray-600">
                         {t.category}
                       </span>
